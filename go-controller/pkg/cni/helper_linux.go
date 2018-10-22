@@ -79,9 +79,9 @@ func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, 
 			return fmt.Errorf("parse ip of gateway failed")
 		}
 		err = ip.AddRoute(nil, gw, link)
-		if err != nil {
+		/*if err != nil {
 			return err
-		}
+		}*/
 
 		oldHostVethName = hostVeth.Name
 
@@ -91,8 +91,9 @@ func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, 
 		return nil, nil, err
 	}
 
+
 	// rename the host end of veth pair
-	hostIface.Name = containerID[:15]
+	hostIface.Name = containerID[:10] + ifName
 	if err := renameLink(oldHostVethName, hostIface.Name); err != nil {
 		return nil, nil, fmt.Errorf("failed to rename %s to %s: %v", oldHostVethName, hostIface.Name, err)
 	}
@@ -101,19 +102,22 @@ func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, 
 }
 
 // ConfigureInterface sets up the container interface
-func (pr *PodRequest) ConfigureInterface(namespace string, podName string, macAddress string, ipAddress string, gatewayIP string, mtu int, ingress, egress int64) ([]*current.Interface, error) {
+func (pr *PodRequest) ConfigureInterface(namespace string, podName string, macAddress string, ipAddress string, gatewayIP string, mtu int, ingress, egress int64, id int) ([]*current.Interface, error) {
 	netns, err := ns.GetNS(pr.Netns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open netns %q: %v", pr.Netns, err)
 	}
 	defer netns.Close()
 
-	hostIface, contIface, err := setupInterface(netns, pr.SandboxID, pr.IfName, macAddress, ipAddress, gatewayIP, mtu)
+	ifName := fmt.Sprintf("eth%d", id)
+	hostIface, contIface, err := setupInterface(netns, pr.SandboxID, ifName, macAddress, ipAddress, gatewayIP, mtu)
 	if err != nil {
 		return nil, err
 	}
 
-	ifaceID := fmt.Sprintf("%s_%s", namespace, podName)
+
+	//ifaceID := fmt.Sprintf("%s_%s", namespace, podName)
+	ifaceID := fmt.Sprintf("%s_%s_%d", namespace, podName, id)
 
 	ovsArgs := []string{
 		"add-port", "br-int", hostIface.Name, "--", "set",
