@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"strconv"
 
 	util "github.com/openvswitch/ovn-kubernetes/go-controller/pkg/util"
 	"github.com/sirupsen/logrus"
@@ -143,13 +144,15 @@ func (oc *Controller) getGatewayFromSwitch(logicalSwitch string) (string, string
 	return gatewayIP, mask, nil
 }
 
-func (oc *Controller) deleteLogicalPort(pod *kapi.Pod) {
+func (oc *Controller) doDeleteLogicalPort(pod *kapi.Pod, devNum int) {
 	if pod.Spec.HostNetwork {
 		return
 	}
 
 	logrus.Infof("Deleting pod: %s", pod.Name)
-	logicalPort := fmt.Sprintf("%s_%s", pod.Namespace, pod.Name)
+	logicalPort := fmt.Sprintf("%s_%s_%d", pod.Namespace, pod.Name, devNum)
+	ovnAnnString := fmt.Sprintf("ovn_0%d", devNum)
+
 	out, stderr, err := util.RunOVNNbctlHA("--if-exists", "lsp-del",
 		logicalPort)
 	if err != nil {
@@ -158,7 +161,7 @@ func (oc *Controller) deleteLogicalPort(pod *kapi.Pod) {
 			out, stderr, err)
 	}
 
-	ipAddress := oc.getIPFromOvnAnnotation(pod.Annotations["ovn"])
+	ipAddress := oc.getIPFromOvnAnnotation(pod.Annotations[ovnAnnString])
 
 	delete(oc.logicalPortCache, logicalPort)
 
@@ -178,7 +181,7 @@ func (oc *Controller) deleteLogicalPort(pod *kapi.Pod) {
 	return
 }
 
-func (oc *Controller) addLogicalPort(pod *kapi.Pod) {
+func (oc *Controller) doAddLogicalPort(pod *kapi.Pod, devNum int) {
 	var out, stderr string
 	var err error
 	if pod.Spec.HostNetwork {
@@ -197,7 +200,8 @@ func (oc *Controller) addLogicalPort(pod *kapi.Pod) {
 		oc.addAllowACLFromNode(logicalSwitch)
 	}
 
-	portName := fmt.Sprintf("%s_%s", pod.Namespace, pod.Name)
+	portName := fmt.Sprintf("%s_%s_%d", pod.Namespace, pod.Name, devNum)
+	ovnAnnString := fmt.Sprintf("ovn_0%d", devNum)
 	logrus.Debugf("Creating logical port for %s on switch %s", portName, logicalSwitch)
 
 	annotation, isStaticIP := pod.Annotations["ovn"]
@@ -283,7 +287,7 @@ func (oc *Controller) addLogicalPort(pod *kapi.Pod) {
 	if !isStaticIP {
 		annotation = fmt.Sprintf(`{\"ip_address\":\"%s/%s\", \"mac_address\":\"%s\", \"gateway_ip\": \"%s\"}`, addresses[1], mask, addresses[0], gatewayIP)
 		logrus.Debugf("Annotation values: ip=%s/%s ; mac=%s ; gw=%s\nAnnotation=%s", addresses[1], mask, addresses[0], gatewayIP, annotation)
-		err = oc.kube.SetAnnotationOnPod(pod, "ovn", annotation)
+		err = oc.kube.SetAnnotationOnPod(pod, ovnAnnString, annotation)
 		if err != nil {
 			logrus.Errorf("Failed to set annotation on pod %s - %v", pod.Name, err)
 		}
@@ -292,6 +296,36 @@ func (oc *Controller) addLogicalPort(pod *kapi.Pod) {
 
 	return
 }
+func (oc *Controller) deleteLogicalPort(pod *kapi.Pod) {
+
+	numDevs := 1 // default
+
+	strNumdevs := pod.Annotations["numDevs"]
+
+	if strNumdevs != "" {
+		numDevs, _ = strconv.Atoi(strNumdevs)
+	}
+
+	for i := 0; i < numDevs; i++ {
+		oc.doDeleteLogicalPort(pod, i)
+	}
+}
+
+func (oc *Controller) addLogicalPort(pod *kapi.Pod) {
+
+	numDevs := 1 // default
+
+	strNumdevs := pod.Annotations["numDevs"]
+
+	if strNumdevs != "" {
+		numDevs, _ = strconv.Atoi(strNumdevs)
+	}
+
+	for i := 0; i < numDevs; i++ {
+		oc.doAddLogicalPort(pod, i)
+	}
+}
+
 
 // AddLogicalPortWithIP add logical port with static ip address
 // and mac adddress for the pod

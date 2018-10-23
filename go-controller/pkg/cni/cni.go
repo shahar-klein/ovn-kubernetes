@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"strconv"
 
 	"github.com/sirupsen/logrus"
 
@@ -84,7 +85,7 @@ func (pr *PodRequest) cmdAdd() *PodResult {
 			logrus.Warningf("Error while obtaining pod annotations - %v", err)
 			return false, nil
 		}
-		if _, ok := annotation["ovn"]; ok {
+		if _, ok := annotation["ovn_00"]; ok {
 			return true, nil
 		}
 		return false, nil
@@ -93,39 +94,56 @@ func (pr *PodRequest) cmdAdd() *PodResult {
 		return nil
 	}
 
-	ovnAnnotation, ok := annotation["ovn"]
-	if !ok {
-		logrus.Errorf("failed to get ovn annotation from pod")
-		return nil
-	}
+	numDevs := 1 // default
 
-	var ovnAnnotatedMap map[string]string
-	err = json.Unmarshal([]byte(ovnAnnotation), &ovnAnnotatedMap)
-	if err != nil {
-		logrus.Errorf("unmarshal ovn annotation failed")
-		return nil
-	}
+	strNumdevs := annotation["numDevs"]
 
-	ipAddress := ovnAnnotatedMap["ip_address"]
-	macAddress := ovnAnnotatedMap["mac_address"]
-	gatewayIP := ovnAnnotatedMap["gateway_ip"]
-
-	if ipAddress == "" || macAddress == "" || gatewayIP == "" {
-		logrus.Errorf("failed in pod annotation key extract")
-		return nil
-	}
-
-	ingress, egress, err := extractPodBandwidthResources(annotation)
-	if err != nil {
-		logrus.Errorf("failed to parse bandwidth request: %v", err)
-		return nil
+	if strNumdevs != "" {
+		numDevs, _ = strconv.Atoi(strNumdevs)
 	}
 
 	var interfacesArray []*current.Interface
-	interfacesArray, err = pr.ConfigureInterface(namespace, podName, macAddress, ipAddress, gatewayIP, config.Default.MTU, ingress, egress)
-	if err != nil {
-		logrus.Errorf("Failed to configure interface in pod: %v", err)
-		return nil
+	ipAddress := ""
+	macAddress := ""
+	gatewayIP := ""
+
+	for i := 0; i < numDevs; i++ {
+		ovnAnnString := fmt.Sprintf("ovn_0%d", i)
+
+		ovnAnnotation, ok := annotation[ovnAnnString]
+		if !ok {
+			logrus.Errorf("failed to get ovn annotation from pod")
+			return nil
+		}
+
+		var ovnAnnotatedMap map[string]string
+		err = json.Unmarshal([]byte(ovnAnnotation), &ovnAnnotatedMap)
+		if err != nil {
+			logrus.Errorf("unmarshal ovn annotation failed")
+			return nil
+		}
+
+		ipAddress = ovnAnnotatedMap["ip_address"]
+		macAddress = ovnAnnotatedMap["mac_address"]
+		gatewayIP = ovnAnnotatedMap["gateway_ip"]
+
+		if ipAddress == "" || macAddress == "" || gatewayIP == "" {
+			logrus.Errorf("failed in pod annotation key extract")
+			return nil
+		}
+
+		ingress, egress, err := extractPodBandwidthResources(annotation)
+		if err != nil {
+			logrus.Errorf("failed to parse bandwidth request: %v", err)
+			return nil
+		}
+
+		//var interfacesArray []*current.Interface
+		interfacesArray, err = pr.ConfigureInterface(namespace, podName, macAddress, ipAddress, gatewayIP, config.Default.MTU, ingress, egress, i)
+		if err != nil {
+			logrus.Errorf("Failed to configure interface in pod: %v", err)
+			return nil
+		}
 	}
 
 	// Build the result structure to pass back to the runtime

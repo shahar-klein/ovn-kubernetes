@@ -21,7 +21,7 @@ fedora: bld
 	#docker push my-registry:5000/ovn-kube:latest
 
 ubuntu: bld
-	docker build -t ovn-kube-u -f Dockerfile.ubuntu .
+	docker build -t shaharklein/ovn-kube-u -f Dockerfile.ubuntu .
 
 .PHONY: ../../go-controller/_output/go/bin/ovnkube
 

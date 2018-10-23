@@ -17,7 +17,7 @@ USER root
 RUN apt-get update
 RUN apt-get install -y iptables iproute2
 RUN apt-get install -y openvswitch-switch openvswitch-common
-RUN apt-get install -y ovn-central ovn-common ovn-host
+RUN apt-get install -y ovn-central ovn-common ovn-host vim 
 
 
 
