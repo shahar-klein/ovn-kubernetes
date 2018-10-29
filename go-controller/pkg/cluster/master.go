@@ -3,9 +3,12 @@ package cluster
 import (
 	"fmt"
 	"net"
+	"strings"
+	"encoding/json"
 
 	kapi "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/openvswitch/ovn-kubernetes/go-controller/pkg/ovn"
 	"github.com/openvswitch/ovn-kubernetes/go-controller/pkg/util"
@@ -252,6 +255,43 @@ func (cluster *OvnClusterController) StartClusterMaster(masterNodeName string) e
 		logrus.Errorf("Failed to setup master (%v)", err)
 		return err
 	}
+
+	masterLabel, err := labels.Parse("name=ovnkube-master")
+	masterOvnPods, err := cluster.Kube.GetPodsByLabels("ovn-kubernetes", masterLabel)
+
+	masterOvnPod := masterOvnPods.Items[0]
+
+	var annotation map[string]string
+	annotation, err = cluster.Kube.GetAnnotationsOnPod("ovn-kubernetes", masterOvnPod.GetName())
+	if err != nil {
+		logrus.Warningf("Error while obtaining pod annotations - %v", err)
+	}
+
+	networksAnn := annotation["networks"]
+	networks := strings.Split(networksAnn, " ")
+
+	for _, network := range networks {
+		netAnn := annotation[network]
+		var nMap map[string]string
+		err = json.Unmarshal([]byte(netAnn), &nMap)
+		if err != nil {
+			logrus.Errorf("unmarshal network annotation failed")
+		}
+		pf := nMap["subnet"]
+		attr2 := nMap["sriov_pf"]
+		attr3 := nMap["gateway_type"]
+		attr3 := nMap["gateway_itf"]
+		attr3 := nMap["vlan_id"]
+		attr3 := nMap["local_k8s_itf"]
+		logrus.Errorf("DEBUGG: SK: subnet: %s", pf)
+		logrus.Errorf("DEBUGG: SK: sriov_pf: %s", attr2)
+		logrus.Errorf("DEBUGG: SK: gateway_type: %s", pf)
+		logrus.Errorf("DEBUGG: SK: gateway_itf: %s", attr2)
+		logrus.Errorf("DEBUGG: SK: vlan_id: %s", attr3)
+		logrus.Errorf("DEBUGG: SK: local_k8s_itf: %s", attr3)
+	}
+
+
 
 	// Watch all node events.  On creation, addNode will be called that will
 	// create a subnet for the switch belonging to that node. On a delete
